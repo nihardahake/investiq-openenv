@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+pydantic
+yfinance
+pandas
+numpy
+python-dotenv
+openai
+requests
+groq
+scikit-learn

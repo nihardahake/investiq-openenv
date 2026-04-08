@@ -1,0 +1,8 @@
+.env
+__pycache__
+*.pyc
+.venv
+cache/
+*.pkl
+node_modules
+.git
