@@ -1,0 +1,26 @@
+[project]
+name = "investiq-openenv"
+version = "1.0.0"
+description = "Indian stock market portfolio management RL environment"
+requires-python = ">=3.10"
+
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "pydantic",
+    "yfinance",
+    "pandas",
+    "numpy",
+    "python-dotenv",
+    "openai",
+    "requests",
+    "groq",
+    "scikit-learn",
+]
+
+[project.urls]
+Homepage = "https://huggingface.co/spaces/YOUR_USERNAME/investiq-openenv"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.backends.legacy:build"
