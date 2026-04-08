@@ -96,10 +96,14 @@ class InvestIQEnv:
         self.max_steps       = self._get_max_steps(task_id)
         self.score_so_far    = 0.0
         self.features_df     = None
+        self.available_stocks = []
 
-        print(f"Loading market data for task: {task_id}")
+    def _ensure_market_data(self):
+   
+     if self.features_df is None:
+        print("Loading market data (first request)...")
         self._load_market_data()
-        print(f"Environment ready — {len(self.available_stocks)} stocks loaded")
+        print(f"Market data ready — {len(self.available_stocks)} stocks")   
 
     def _get_max_steps(self, task_id: str) -> int:
         return {"task1_allocation": 1,
@@ -132,6 +136,7 @@ class InvestIQEnv:
     # reset() — start fresh episode
     # ─────────────────────────────────────
     def reset(self) -> EnvironmentState:
+        self._ensure_market_data()
         self.step_count   = 0
         self.score_so_far = 0.0
         user              = generate_random_profile()

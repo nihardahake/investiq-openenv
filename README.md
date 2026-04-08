@@ -62,16 +62,3 @@ Scores 0.0-1.0 based on:
 ```bash
 pip install -r requirements.txt
 uvicorn main:app --reload
-```
-
-## Run inference
-```bash
-python inference.py
-```
-
-## Environment Variables
-- API_BASE_URL: LLM API endpoint
-- MODEL_NAME: Model identifier
-- HF_TOKEN: Hugging Face token
-- GROQ_API_KEY: Groq API key
-- ENV_URL: Environment URL (default: http://localhost:8000)

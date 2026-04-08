@@ -20,20 +20,32 @@ app.add_middleware(
     allow_headers  = ["*"],
 )
 
-# One environment instance per task
-envs = {
-    "task1_allocation":      InvestIQEnv("task1_allocation"),
-    "task2_stock_selection": InvestIQEnv("task2_stock_selection"),
-    "task3_full_portfolio":  InvestIQEnv("task3_full_portfolio"),
+# ─────────────────────────────────────────
+# Lazy environment store
+# Nothing loads at startup — only when
+# first request comes in
+# ─────────────────────────────────────────
+
+VALID_TASKS = {
+    "task1_allocation":      1,
+    "task2_stock_selection": 2,
+    "task3_full_portfolio":  3,
 }
 
+_envs = {}   # starts empty — populated on first request
+
 def get_env(task_id: str) -> InvestIQEnv:
-    if task_id not in envs:
+    if task_id not in VALID_TASKS:
         raise HTTPException(
             status_code = 400,
-            detail      = f"Unknown task: {task_id}. Choose from {list(envs.keys())}"
+            detail      = f"Unknown task: {task_id}. Choose from {list(VALID_TASKS.keys())}"
         )
-    return envs[task_id]
+
+    # Create environment only when first requested
+    if task_id not in _envs:
+        _envs[task_id] = InvestIQEnv(task_id)
+
+    return _envs[task_id]
 
 
 # ─────────────────────────────────────────
@@ -69,21 +81,21 @@ def list_tasks():
     return {
         "tasks": [
             {
-                "id":         "task1_allocation",
-                "difficulty": "easy",
-                "max_steps":  1,
+                "id":          "task1_allocation",
+                "difficulty":  "easy",
+                "max_steps":   1,
                 "description": "Choose the right equity/debt/gold split for a user"
             },
             {
-                "id":         "task2_stock_selection",
-                "difficulty": "medium",
-                "max_steps":  2,
+                "id":          "task2_stock_selection",
+                "difficulty":  "medium",
+                "max_steps":   2,
                 "description": "Pick the best NSE stocks for the equity bucket"
             },
             {
-                "id":         "task3_full_portfolio",
-                "difficulty": "hard",
-                "max_steps":  3,
+                "id":          "task3_full_portfolio",
+                "difficulty":  "hard",
+                "max_steps":   3,
                 "description": "Build and rebalance a complete portfolio over 3 steps"
             },
         ]
@@ -96,5 +108,5 @@ def root():
         "name":    "InvestIQ OpenEnv",
         "version": "1.0.0",
         "status":  "running",
-        "tasks":   list(envs.keys()),
+        "tasks":   list(VALID_TASKS.keys()),
     }
