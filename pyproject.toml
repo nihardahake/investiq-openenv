@@ -19,8 +19,8 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://huggingface.co/spaces/YOUR_USERNAME/investiq-openenv"
+Homepage = "https://huggingface.co/spaces/shivdahake5/investiq-env"
 
 [build-system]
 requires = ["setuptools>=61.0"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
