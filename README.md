@@ -1,3 +1,17 @@
+---
+title: InvestIQ OpenEnv
+emoji: 🚀
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_file: server/app.py
+pinned: false
+---
+
+
+
+
+
 # InvestIQ OpenEnv 📈
 
 InvestIQ is an AI-powered portfolio management environment built using OpenEnv principles.
