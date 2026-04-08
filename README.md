@@ -1,64 +1,51 @@
+# InvestIQ OpenEnv 📈
+
+InvestIQ is an AI-powered portfolio management environment built using OpenEnv principles.
+
+It simulates real-world investment decisions where an agent allocates capital across equity, debt, and gold based on user risk profiles.
+
 ---
-title: InvestIQ OpenEnv
-emoji: 📈
-colorFrom: purple
-colorTo: blue
-sdk: docker
-pinned: false
+
+## 🚀 Features
+
+- 3 Tasks:
+  - task1_allocation → Asset allocation
+  - task2_stock_selection → Stock picking
+  - task3_full_portfolio → Full portfolio optimization
+
+- Real NSE stock data (10+ years simulated)
+- Feature engineering (Sharpe, momentum, volatility)
+- Reward system based on:
+  - Risk alignment (40%)
+  - Stock quality (30%)
+  - Diversification (20%)
+  - Constraints (10%)
+
 ---
 
-# InvestIQ Portfolio Management Environment
+## 🧠 Architecture
 
-A real-world OpenEnv environment for Indian stock market
-portfolio optimization. An AI agent learns to allocate
-capital across equity, debt, and gold based on a user's
-risk profile — evaluated against 10yr NSE market data.
+- FastAPI backend
+- OpenEnv-compatible API:
+  - `/reset`
+  - `/step`
+  - `/state`
+- Hugging Face Space deployment
+- Lazy loading to prevent startup timeouts
 
-## Real-world problem
-97% of Indian investors have no access to personalized
-financial advice. This environment trains agents to fill
-that gap using real NSE data.
+---
 
-## Tasks
+## 🌐 Live Demo
 
-| Task | Difficulty | Steps | Description |
-|------|-----------|-------|-------------|
-| task1_allocation | Easy | 1 | Choose equity/debt/gold split |
-| task2_stock_selection | Medium | 2 | Pick best NSE stocks |
-| task3_full_portfolio | Hard | 3 | Full portfolio optimization |
+👉 https://shivdahake5-investiq-env.hf.space
 
-## Observation Space
-- risk_score: int (0-100)
-- investment_amount: float
-- income: str
-- risk_appetite: str
-- time_horizon: str
-- goal: str
-- market_data: list of stock features (sharpe, momentum, volatility)
+Swagger UI:
+👉 https://shivdahake5-investiq-env.hf.space/docs
 
-## Action Space
-- equity_pct: float (0-100)
-- debt_pct: float (0-100)
-- gold_pct: float (0-100)
-- selected_stocks: list[str] (NSE tickers)
+---
 
-## Reward
-Scores 0.0-1.0 based on:
-- Allocation match to risk profile (40%)
-- Stock quality by Sharpe ratio (30%)
-- Sector diversification (20%)
-- Constraint satisfaction (10%)
+## ⚙️ Run Locally
 
-## API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| /reset | POST | Start fresh episode |
-| /step | POST | Take an action |
-| /state | GET | Get current state |
-| /tasks | GET | List all tasks |
-
-## Setup
 ```bash
 pip install -r requirements.txt
 uvicorn main:app --reload
