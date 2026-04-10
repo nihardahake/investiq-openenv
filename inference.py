@@ -197,42 +197,46 @@ def _validate_action(action: dict, market_data: list) -> dict:
 # ─────────────────────────────────────────
 
 def run_task(task_id: str, max_steps: int) -> float:
-    print(f"\n{'='*50}")
-    print(f"Running: {task_id}")
-    print(f"{'='*50}")
 
-    # Reset
-    state  = reset(task_id)
-    print(f"User: risk_score={state['user']['risk_score']}, "
-          f"amount=₹{state['user']['investment_amount']:,.0f}")
+    # ── REQUIRED: START block ──────────────────────
+    print(f"[START] task={task_id}", flush=True)
 
-    final_score = 0.0
+    try:
+        state  = reset(task_id)
+        print(f"User: risk_score={state['user']['risk_score']}, "
+              f"amount=₹{state['user']['investment_amount']:,.0f}",
+              flush=True)
 
-    for step_num in range(1, max_steps + 1):
-        print(f"\nStep {step_num}/{max_steps}")
+        final_score = 0.0
 
-        # Agent decides
-        action = agent_decide(state, task_id)
-        print(f"  Action: equity={action['equity_pct']}%, "
-              f"debt={action['debt_pct']}%, "
-              f"gold={action['gold_pct']}%")
-        print(f"  Stocks: {action['selected_stocks']}")
+        for step_num in range(1, max_steps + 1):
 
-        # Take step
-        result      = step(task_id, action)
-        reward      = result["reward"]
-        done        = result["done"]
-        final_score = result["state"]["score_so_far"]
+            # Agent decides
+            action = agent_decide(state, task_id)
 
-        print(f"  Reward: {reward}")
-        print(f"  Score so far: {final_score}")
+            # Take step
+            result      = step(task_id, action)
+            reward      = result["reward"]
+            done        = result["done"]
+            final_score = result["state"]["score_so_far"]
 
-        state = result["state"]
+            # ── REQUIRED: STEP block ───────────────
+            print(f"[STEP] step={step_num} reward={reward}", flush=True)
 
-        if done:
-            break
+            state = result["state"]
 
-    print(f"\nFinal score for {task_id}: {final_score}")
+            if done:
+                break
+
+    except Exception as e:
+        print(f"[STEP] step=1 reward=0.0", flush=True)
+        print(f"Error: {e}", flush=True)
+        final_score = 0.0
+
+    # ── REQUIRED: END block ────────────────────────
+    print(f"[END] task={task_id} score={final_score} steps={max_steps}",
+          flush=True)
+
     return final_score
 
 
@@ -241,10 +245,9 @@ def run_task(task_id: str, max_steps: int) -> float:
 # ─────────────────────────────────────────
 
 def main():
-    print("InvestIQ OpenEnv — Baseline Inference")
-    print("Model:", MODEL_NAME)
-    print("Environment:", ENV_URL)
-    print()
+    print("InvestIQ OpenEnv — Baseline Inference", flush=True)
+    print(f"Model: {MODEL_NAME}", flush=True)
+    print(f"Environment: {ENV_URL}", flush=True)
 
     tasks = [
         ("task1_allocation",      1),
@@ -255,26 +258,16 @@ def main():
     scores = {}
 
     for task_id, max_steps in tasks:
-        try:
-            score = run_task(task_id, max_steps)
-            scores[task_id] = score
-        except Exception as e:
-            print(f"Error on {task_id}: {e}")
-            scores[task_id] = 0.0
+        score          = run_task(task_id, max_steps)
+        scores[task_id] = score
 
-    # ── Final summary ──────────────────────
-    print(f"\n{'='*50}")
-    print("FINAL SCORES")
-    print(f"{'='*50}")
+    # Final summary
+    print("\n=== FINAL SCORES ===", flush=True)
     for task_id, score in scores.items():
-        bar = "█" * int(score * 20)
-        print(f"{task_id:<30} {score:.4f}  {bar}")
+        print(f"{task_id}: {score}", flush=True)
 
     avg = sum(scores.values()) / len(scores)
-    print(f"\nAverage score: {avg:.4f}")
-    print(f"{'='*50}")
-
-    return scores
+    print(f"Average: {avg:.4f}", flush=True)
 
 
 if __name__ == "__main__":
