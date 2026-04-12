@@ -1,56 +1,53 @@
 # inference.py
+# ─────────────────────────────────────────────────────────────────────────────
+# Phase-2 submission: uses InvestIQEnv directly (no HTTP round-trip) so the
+# [START] / [STEP] / [END] blocks always reach stdout regardless of whether
+# an external service is reachable.
+# ─────────────────────────────────────────────────────────────────────────────
 
 import os
-import json
 import sys
-import requests
-from openai import OpenAI
-from dotenv import load_dotenv
+import json
 
-load_dotenv()
+# ── flush helper ──────────────────────────────────────────────────────────────
+def emit(msg: str) -> None:
+    print(msg, flush=True)
+    sys.stdout.flush()
 
+# ── Groq / OpenAI client (optional — falls back gracefully) ──────────────────
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass  # dotenv not required; env vars may already be set
+
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+HF_TOKEN     = os.getenv("HF_TOKEN", "")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://api.groq.com/openai/v1")
 MODEL_NAME   = os.getenv("MODEL_NAME",   "llama-3.3-70b-versatile")
-HF_TOKEN     = os.getenv("HF_TOKEN",     "")
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
-# ── CRITICAL: must point to HF Space, not localhost ──
-ENV_URL = os.getenv(
-    "ENV_URL",
-    "https://YOUR_USERNAME-investiq-openenv.hf.space"   # ← replace YOUR_USERNAME
-)
+try:
+    from openai import OpenAI
+    _api_key = GROQ_API_KEY or HF_TOKEN
+    client = OpenAI(api_key=_api_key, base_url=API_BASE_URL) if _api_key else None
+except Exception:
+    client = None
 
-client = OpenAI(
-    api_key  = GROQ_API_KEY or HF_TOKEN,
-    base_url = API_BASE_URL,
-)
+# ── Import the environment directly ──────────────────────────────────────────
+try:
+    from environment.investiq_env import InvestIQEnv, PortfolioAction
+    ENV_AVAILABLE = True
+except Exception as _env_err:
+    ENV_AVAILABLE = False
+    emit(f"# WARNING: could not import InvestIQEnv: {_env_err}")
 
-FALLBACK_STOCKS = [
-    "BHARTIARTL.NS", "NTPC.NS", "M&M.NS", "SUNPHARMA.NS"
-]
-
-
-def reset(task_id: str) -> dict:
-    res = requests.post(
-        f"{ENV_URL}/reset",
-        params  = {"task_id": task_id},
-        timeout = 60
-    )
-    res.raise_for_status()
-    return res.json()
+# ── Fallback stocks ───────────────────────────────────────────────────────────
+FALLBACK_STOCKS = ["BHARTIARTL.NS", "NTPC.NS", "M&M.NS", "SUNPHARMA.NS"]
 
 
-def step(task_id: str, action: dict) -> dict:
-    res = requests.post(
-        f"{ENV_URL}/step",
-        params  = {"task_id": task_id},
-        json    = action,
-        headers = {"Content-Type": "application/json"},
-        timeout = 60
-    )
-    res.raise_for_status()
-    return res.json()
-
+# ─────────────────────────────────────────────────────────────────────────────
+# Agent logic
+# ─────────────────────────────────────────────────────────────────────────────
 
 def get_fallback_action(risk_score: int) -> dict:
     if risk_score < 40:
@@ -64,18 +61,33 @@ def get_fallback_action(risk_score: int) -> dict:
                 "selected_stocks": FALLBACK_STOCKS}
 
 
-def agent_decide(state: dict, task_id: str) -> dict:
+def agent_decide(state, task_id: str) -> dict:
+    """
+    Ask the LLM for an allocation decision.
+    Falls back to rule-based logic if the LLM is unavailable.
+    Works with both EnvironmentState objects and plain dicts.
+    """
     try:
-        user       = state["user"]
-        risk_score = user["risk_score"]
+        # Support both object and dict forms of state
+        if isinstance(state, dict):
+            user        = state["user"]
+            market_data = state.get("market_data", [])
+            risk_score  = user["risk_score"] if isinstance(user, dict) else user.risk_score
+        else:
+            user        = state.user
+            market_data = state.market_data
+            risk_score  = user.risk_score
+
         risk_level = ("conservative" if risk_score < 40 else
                       "balanced"     if risk_score < 70 else
                       "aggressive")
 
-        market_data = state.get("market_data", [])
-        top_stocks  = sorted(
-            market_data, key=lambda x: x["sharpe"], reverse=True
-        )[:8]
+        # Normalise market_data items to dict
+        def to_dict(m):
+            return m if isinstance(m, dict) else m.dict()
+
+        md_list    = [to_dict(m) for m in market_data]
+        top_stocks = sorted(md_list, key=lambda x: x["sharpe"], reverse=True)[:8]
 
         stock_summary = "\n".join([
             f"  {s['ticker']}: sharpe={s['sharpe']:.2f}, "
@@ -83,9 +95,16 @@ def agent_decide(state: dict, task_id: str) -> dict:
             for s in top_stocks
         ])
 
-        prompt = f"""You are an Indian investment advisor.
+        # ── Try LLM ──────────────────────────────────────────────────────────
+        if client is not None:
+            invest_amount = (
+                user["investment_amount"]
+                if isinstance(user, dict)
+                else user.investment_amount
+            )
+            prompt = f"""You are an Indian investment advisor.
 
-User: risk_score={risk_score}/100 ({risk_level}), amount=₹{user['investment_amount']:,.0f}
+User: risk_score={risk_score}/100 ({risk_level}), amount=₹{invest_amount:,.0f}
 
 Top stocks by Sharpe:
 {stock_summary}
@@ -93,122 +112,188 @@ Top stocks by Sharpe:
 Rules:
 - equity_pct + debt_pct + gold_pct = exactly 100
 - conservative (risk<40): equity<=30, debt>=50
-- balanced (risk 40-70): equity 40-60, debt 20-40  
+- balanced (risk 40-70): equity 40-60, debt 20-40
 - aggressive (risk>70): equity>=60, debt<=20
 - Pick 4 stocks from the list above
 
 Respond ONLY with this exact JSON (no markdown, no explanation):
 {{"equity_pct": 60, "debt_pct": 30, "gold_pct": 10, "selected_stocks": ["T1.NS","T2.NS","T3.NS","T4.NS"]}}"""
 
-        response = client.chat.completions.create(
-            model       = MODEL_NAME,
-            messages    = [{"role": "user", "content": prompt}],
-            max_tokens  = 150,
-            temperature = 0.0,
-        )
+            response = client.chat.completions.create(
+                model       = MODEL_NAME,
+                messages    = [{"role": "user", "content": prompt}],
+                max_tokens  = 150,
+                temperature = 0.0,
+            )
+            raw = response.choices[0].message.content.strip()
 
-        raw = response.choices[0].message.content.strip()
-
-        # Strip markdown if present
-        for tag in ["```json", "```"]:
-            if tag in raw:
-                raw = raw.split(tag)[1].split("```")[0].strip()
-                break
-
-        action = json.loads(raw)
-
-        # Normalize to 100
-        e = float(action.get("equity_pct", 60))
-        d = float(action.get("debt_pct",   30))
-        g = float(action.get("gold_pct",   10))
-        t = e + d + g
-        if t > 0:
-            e = round(e / t * 100, 1)
-            d = round(d / t * 100, 1)
-            g = round(100 - e - d, 1)
-
-        # Validate stocks
-        available = {m["ticker"] for m in market_data}
-        stocks    = [s for s in action.get("selected_stocks", [])
-                     if s in available]
-
-        if len(stocks) < 4:
-            for s in top_stocks:
-                if s["ticker"] not in stocks:
-                    stocks.append(s["ticker"])
-                if len(stocks) == 4:
+            # Strip markdown fences if present
+            for tag in ["```json", "```"]:
+                if tag in raw:
+                    raw = raw.split(tag)[1].split("```")[0].strip()
                     break
 
-        return {
-            "equity_pct":      e,
-            "debt_pct":        d,
-            "gold_pct":        g,
-            "selected_stocks": stocks[:4],
-        }
+            action = json.loads(raw)
+
+            # Normalise percentages to 100
+            e = float(action.get("equity_pct", 60))
+            d = float(action.get("debt_pct",   30))
+            g = float(action.get("gold_pct",   10))
+            total = e + d + g
+            if total > 0:
+                e = round(e / total * 100, 1)
+                d = round(d / total * 100, 1)
+                g = round(100 - e - d, 1)
+
+            # Validate stock tickers
+            available = {m["ticker"] for m in md_list}
+            stocks    = [s for s in action.get("selected_stocks", [])
+                         if s in available]
+
+            if len(stocks) < 4:
+                for s in top_stocks:
+                    if s["ticker"] not in stocks:
+                        stocks.append(s["ticker"])
+                    if len(stocks) == 4:
+                        break
+
+            return {"equity_pct": e, "debt_pct": d, "gold_pct": g,
+                    "selected_stocks": stocks[:4]}
+
+        # ── No LLM: rule-based from top stocks ───────────────────────────────
+        stocks = [s["ticker"] for s in top_stocks[:4]]
+        return {**get_fallback_action(risk_score), "selected_stocks": stocks}
 
     except Exception as ex:
-        print(f"Agent error: {ex}", flush=True)
-        return get_fallback_action(state["user"]["risk_score"])
+        emit(f"# agent_decide error: {ex}")
+        try:
+            rs = (state["user"]["risk_score"]
+                  if isinstance(state, dict)
+                  else state.user.risk_score)
+        except Exception:
+            rs = 50
+        return get_fallback_action(rs)
 
 
-def run_task(task_id: str, max_steps: int) -> float:
-    # Always print START immediately
-    print(f"[START] task={task_id}", flush=True)
-    sys.stdout.flush()
+# ─────────────────────────────────────────────────────────────────────────────
+# Task runner — direct in-process calls (no HTTP)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_task_direct(task_id: str, max_steps: int) -> float:
+    """Run one task using InvestIQEnv directly (no HTTP)."""
+    emit(f"[START] task={task_id}")
 
     final_score = 0.0
     step_num    = 0
 
     try:
-        state = reset(task_id)
-        risk  = state["user"]["risk_score"]
+        env   = InvestIQEnv(task_id)
+        state = env.reset()
 
         for step_num in range(1, max_steps + 1):
             try:
-                action = agent_decide(state, task_id)
+                action_dict = agent_decide(state, task_id)
             except Exception:
-                action = get_fallback_action(risk)
+                rs = state.user.risk_score if hasattr(state, "user") else 50
+                action_dict = get_fallback_action(rs)
 
             try:
-                result      = step(task_id, action)
-                reward      = float(result.get("reward", 0.0))
-                done        = result.get("done", True)
-                final_score = float(result["state"].get("score_so_far", reward))
-                state       = result["state"]
+                portfolio_action = PortfolioAction(**action_dict)
+                result      = env.step(portfolio_action)
+                reward      = float(result.reward)
+                done        = result.done
+                final_score = float(result.state.score_so_far)
+                state       = result.state
             except Exception as ex:
-                print(f"Step error: {ex}", flush=True)
+                emit(f"# step error: {ex}")
                 reward      = 0.0
                 done        = True
                 final_score = 0.0
 
-            # Always print STEP
-            print(f"[STEP] step={step_num} reward={reward}", flush=True)
-            sys.stdout.flush()
+            emit(f"[STEP] step={step_num} reward={reward}")
 
             if done:
                 break
 
     except Exception as ex:
-        print(f"Task error: {ex}", flush=True)
-        # Still print a STEP so validator doesn't fail
+        emit(f"# task error: {ex}")
         if step_num == 0:
-            print(f"[STEP] step=1 reward=0.0", flush=True)
-            sys.stdout.flush()
+            emit(f"[STEP] step=1 reward=0.0")
+            step_num = 1
         final_score = 0.0
 
-    # Always print END
-    print(f"[END] task={task_id} score={final_score} steps={max_steps}",
-          flush=True)
-    sys.stdout.flush()
-
+    emit(f"[END] task={task_id} score={final_score} steps={step_num}")
     return final_score
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Fallback runner — HTTP (used only when env import failed)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_task_http(task_id: str, max_steps: int, env_url: str) -> float:
+    """Fallback: hit a running HTTP server."""
+    import requests as _req
+
+    emit(f"[START] task={task_id}")
+
+    final_score = 0.0
+    step_num    = 0
+
+    try:
+        res   = _req.post(f"{env_url}/reset", params={"task_id": task_id}, timeout=60)
+        res.raise_for_status()
+        state = res.json()
+
+        for step_num in range(1, max_steps + 1):
+            try:
+                action = agent_decide(state, task_id)
+            except Exception:
+                action = get_fallback_action(state.get("user", {}).get("risk_score", 50))
+
+            try:
+                r      = _req.post(
+                    f"{env_url}/step",
+                    params  = {"task_id": task_id},
+                    json    = action,
+                    headers = {"Content-Type": "application/json"},
+                    timeout = 60,
+                )
+                r.raise_for_status()
+                result      = r.json()
+                reward      = float(result.get("reward", 0.0))
+                done        = result.get("done", True)
+                final_score = float(result["state"].get("score_so_far", reward))
+                state       = result["state"]
+            except Exception as ex:
+                emit(f"# step error: {ex}")
+                reward      = 0.0
+                done        = True
+                final_score = 0.0
+
+            emit(f"[STEP] step={step_num} reward={reward}")
+
+            if done:
+                break
+
+    except Exception as ex:
+        emit(f"# task error: {ex}")
+        if step_num == 0:
+            emit(f"[STEP] step=1 reward=0.0")
+            step_num = 1
+        final_score = 0.0
+
+    emit(f"[END] task={task_id} score={final_score} steps={step_num}")
+    return final_score
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Entry point
+# ─────────────────────────────────────────────────────────────────────────────
+
 def main():
-    print("InvestIQ OpenEnv — Baseline Inference", flush=True)
-    print(f"Model: {MODEL_NAME}", flush=True)
-    print(f"ENV_URL: {ENV_URL}", flush=True)
-    sys.stdout.flush()
+    emit("# InvestIQ OpenEnv — Phase-2 Inference")
+    emit(f"# Model: {MODEL_NAME}")
+    emit(f"# ENV_AVAILABLE: {ENV_AVAILABLE}")
 
     tasks = [
         ("task1_allocation",      1),
@@ -218,17 +303,30 @@ def main():
 
     scores = {}
 
+    env_url = os.getenv("ENV_URL", "")
+
     for task_id, max_steps in tasks:
-        score           = run_task(task_id, max_steps)
+        if ENV_AVAILABLE:
+            score = run_task_direct(task_id, max_steps)
+        else:
+            # Last resort: try HTTP if ENV_URL is set
+            if env_url:
+                score = run_task_http(task_id, max_steps, env_url)
+            else:
+                # Absolute last resort: emit minimal valid blocks with 0 score
+                emit(f"[START] task={task_id}")
+                emit(f"[STEP] step=1 reward=0.0")
+                emit(f"[END] task={task_id} score=0.0 steps=1")
+                score = 0.0
+
         scores[task_id] = score
 
-    print("\n=== FINAL SCORES ===", flush=True)
-    for task_id, score in scores.items():
-        print(f"{task_id}: {score}", flush=True)
+    emit("\n# === FINAL SCORES ===")
+    for tid, sc in scores.items():
+        emit(f"# {tid}: {sc}")
 
     avg = sum(scores.values()) / len(scores)
-    print(f"Average: {avg:.4f}", flush=True)
-    sys.stdout.flush()
+    emit(f"# Average: {avg:.4f}")
 
 
 if __name__ == "__main__":
