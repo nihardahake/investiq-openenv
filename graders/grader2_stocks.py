@@ -14,7 +14,7 @@ def grade(action: dict, user: dict, market_data: list) -> float:
     risk    = user["risk_score"]
 
     if not stocks:
-        return 0.0
+        return 0.01
 
     # Build lookup from market_data list
     market = {m["ticker"]: m for m in market_data}
@@ -59,4 +59,4 @@ def grade(action: dict, user: dict, market_data: list) -> float:
     if len(stocks) >= 3:
         score += 0.10
 
-    return round(min(score, 1.0), 4)
+    return round(max(0.01, min(score, 0.99)), 4)

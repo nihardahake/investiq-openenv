@@ -32,4 +32,4 @@ def grade(action: dict, user: dict) -> float:
     if 5 <= gold <= 20:
         score += 0.20
 
-    return round(min(score, 1.0), 4)
+    return round(max(0.01, min(score, 0.99)), 4)

@@ -32,7 +32,7 @@ def grade(action: dict, user: dict,
             equity, debt, gold, stocks, market, risk
         )
 
-    return 0.0
+    return 0.01
 
 
 def _grade_step1_allocation(equity, debt, gold, risk) -> float:
@@ -53,13 +53,13 @@ def _grade_step1_allocation(equity, debt, gold, risk) -> float:
     if 97 <= total <= 103:
         score += 0.30
 
-    return round(min(score, 1.0), 4)
+    return round(max(0.01, min(score, 0.99)), 4)
 
 
 def _grade_step2_selection(stocks, market, risk) -> float:
     """Step 2: Did the agent pick quality stocks?"""
     if not stocks:
-        return 0.0
+        return 0.01
 
     score = 0.0
 
@@ -87,7 +87,7 @@ def _grade_step2_selection(stocks, market, risk) -> float:
     if len(stocks) >= 3:
         score += 0.10
 
-    return round(min(score, 1.0), 4)
+    return round(max(0.01, min(score, 0.99)), 4)
 
 
 def _grade_step3_rebalance(equity, debt, gold,
@@ -133,4 +133,4 @@ def _grade_step3_rebalance(equity, debt, gold,
     if 97 <= total <= 103:
         score += 0.10
 
-    return round(min(score, 1.0), 4)
+    return round(max(0.01, min(score, 0.99)), 4)
